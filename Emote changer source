@@ -1,0 +1,324 @@
+local Fluent = loadstring(game:HttpGet("https://github.com/StyearX/Fluent-Modded/releases/download/N/main.lua"))()
+local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/Vraigos/Fluent-Modded/refs/heads/master/Addons/SaveManager.lua"))()
+local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/Vraigos/Fluent-Modded/refs/heads/master/Addons/InterfaceManager.lua"))()
+local FloatingManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/Vraigos/Fluent-Modded/refs/heads/master/Addons/SaveFloatingButtonManager.lua"))()
+
+local Window = Fluent:CreateWindow({
+    Title = "Evade Overhaul",
+    SubTitle = "Emote Changer System",
+    TabWidth = 160,
+    Size = UDim2.fromOffset(580, 520),
+    Acrylic = true,
+    Theme = "Dark",
+    MinimizeKey = Enum.KeyCode.LeftControl
+})
+
+local EmoteTab = Window:AddTab({ Title = "Emote Changer", Icon = "emote" })
+local SettingsTab = Window:AddTab({ Title = "Settings", Icon = "settings" })
+
+local RS = game:GetService("ReplicatedStorage")
+local lp = game:GetService("Players").LocalPlayer
+
+-- Store slot configurations
+local slotConfigs = {}
+
+-- Function to get emotes folder
+local function getEmotesFolder()
+    local items = RS:FindFirstChild("Items")
+    if items then
+        return items:FindFirstChild("Emotes")
+    end
+    return nil
+end
+
+-- Function to swap emote
+local function swapEmote(slotNumber, currentEmote, swapWithEmote)
+    if currentEmote == "" or swapWithEmote == "" then
+        Fluent:Notify({
+            Title = "Error",
+            Content = "Both fields must be filled!",
+            Duration = 3
+        })
+        return false
+    end
+    
+    if currentEmote == swapWithEmote then
+        Fluent:Notify({
+            Title = "Error",
+            Content = "Current and Swap emotes cannot be the same!",
+            Duration = 3
+        })
+        return false
+    end
+    
+    local emotesFolder = getEmotesFolder()
+    if not emotesFolder then
+        Fluent:Notify({
+            Title = "Error",
+            Content = "Emotes folder not found!",
+            Duration = 3
+        })
+        return false
+    end
+    
+    local targetEmote = nil  -- The emote to rename (swapWith)
+    local sourceEmote = nil  -- The emote we own (currentEmote)
+    
+    for _, obj in ipairs(emotesFolder:GetDescendants()) do
+        if obj:IsA("ModuleScript") then
+            if obj.Name == swapWithEmote then
+                targetEmote = obj
+            elseif obj.Name == currentEmote then
+                sourceEmote = obj
+            end
+        end
+    end
+    
+    if targetEmote and sourceEmote then
+        targetEmote.Name = currentEmote
+        
+        Fluent:Notify({
+            Title = "Slot " .. slotNumber,
+            Content = string.format("Swapped '%s' with '%s'", swapWithEmote, currentEmote),
+            Duration = 4
+        })
+        return true
+    else
+        local missing = {}
+        if not targetEmote then table.insert(missing, swapWithEmote) end
+        if not sourceEmote then table.insert(missing, currentEmote) end
+        
+        Fluent:Notify({
+            Title = "Error",
+            Content = string.format("Could not find: %s", table.concat(missing, ", ")),
+            Duration = 4
+        })
+        return false
+    end
+end
+
+-- Create 6 emote slots
+local sections = {}
+local currentInputs = {}
+local swapInputs = {}
+
+for slot = 1, 6 do
+    local section = EmoteTab:AddSection(string.format("━━━ Slot %d ━━━", slot))
+    sections[slot] = section
+    
+    -- Store input values
+    slotConfigs[slot] = {
+        current = "",
+        swap = ""
+    }
+    
+    -- Current emote input
+    currentInputs[slot] = section:AddInput(string.format("Slot%d_Current", slot), {
+        Title = "Current Emote (One I Have)",
+        Description = "Enter the name of the emote you own",
+        Default = "",
+        Placeholder = "e.g., Stride, Dance, Wave",
+        Numeric = false,
+        Finished = false
+    })
+    
+    currentInputs[slot]:OnChanged(function(value)
+        slotConfigs[slot].current = value
+    end)
+    
+    -- Swap with emote input
+    swapInputs[slot] = section:AddInput(string.format("Slot%d_Swap", slot), {
+        Title = "Swap With Emote",
+        Description = "Enter the name of the emote to transform",
+        Default = "",
+        Placeholder = "e.g., Broom, Point, Laugh",
+        Numeric = false,
+        Finished = false
+    })
+    
+    swapInputs[slot]:OnChanged(function(value)
+        slotConfigs[slot].swap = value
+    end)
+    
+    -- Apply button
+    section:AddButton({
+        Title = string.format("Apply Slot %d", slot),
+        Description = "Execute emote swap for this slot",
+        Callback = function()
+            swapEmote(slot, slotConfigs[slot].current, slotConfigs[slot].swap)
+        end
+    })
+    
+    -- Divider after each slot (except last)
+    if slot < 6 then
+        section:AddDivider()
+    end
+end
+
+-- Add Quick Actions section
+local QuickSection = EmoteTab:AddSection("━━━ Quick Actions ━━━")
+
+-- Reset all slots button
+QuickSection:AddButton({
+    Title = "Reset All Slots",
+    Description = "Clear all slot configurations",
+    Callback = function()
+        for slot = 1, 6 do
+            slotConfigs[slot].current = ""
+            slotConfigs[slot].swap = ""
+            
+            -- Update input fields if possible
+            if currentInputs[slot] and currentInputs[slot].SetValue then
+                currentInputs[slot]:SetValue("")
+            end
+            if swapInputs[slot] and swapInputs[slot].SetValue then
+                swapInputs[slot]:SetValue("")
+            end
+        end
+        
+        Fluent:Notify({
+            Title = "Reset Complete",
+            Content = "All slots have been cleared",
+            Duration = 3
+        })
+    end
+})
+
+-- Refresh button
+QuickSection:AddButton({
+    Title = "Refresh Connection",
+    Description = "Re-check emote folder connection",
+    Callback = function()
+        local folder = getEmotesFolder()
+        if folder then
+            local emoteCount = 0
+            for _, obj in ipairs(folder:GetDescendants()) do
+                if obj:IsA("ModuleScript") then
+                    emoteCount = emoteCount + 1
+                end
+            end
+            
+            Fluent:Notify({
+                Title = "Connected",
+                Content = string.format("Found %d emotes available", emoteCount),
+                Duration = 3
+            })
+        else
+            Fluent:Notify({
+                Title = "Error",
+                Content = "Could not connect to emotes folder",
+                Duration = 3
+            })
+        end
+    end
+})
+
+-- Info section
+local InfoSection = EmoteTab:AddSection("━━━ Information ━━━")
+InfoSection:AddParagraph({
+    Title = "How to Use",
+    Content = "1. Enter the emote you OWN in 'Current Emote'\n2. Enter the emote you WANT in 'Swap With'\n3. Click 'Apply Slot' to execute\n\nExample: Current = 'Stride', Swap = 'Broom'\nResult: Broom becomes Stride"
+})
+
+-- Save Manager Setup
+SaveManager:SetLibrary(Fluent)
+InterfaceManager:SetLibrary(Fluent)
+FloatingManager:SetLibrary(Fluent)
+
+SaveManager:IgnoreThemeSettings()
+InterfaceManager:SetFolder("EvadeOverhaul")
+SaveManager:SetFolder("EvadeOverhaul/EmoteChanger")
+FloatingManager:SetFolder("EvadeOverhaul")
+
+InterfaceManager:BuildInterfaceSection(SettingsTab)
+SaveManager:BuildConfigSection(SettingsTab)
+FloatingManager:BuildConfigSection(SettingsTab)
+
+-- Save slot configs
+SaveManager:AddOnSave(function()
+    return {
+        slots = slotConfigs
+    }
+end)
+
+SaveManager:AddOnLoad(function(data)
+    if data and data.slots then
+        for slot = 1, 6 do
+            if data.slots[slot] then
+                slotConfigs[slot] = data.slots[slot]
+                if currentInputs[slot] and currentInputs[slot].SetValue then
+                    currentInputs[slot]:SetValue(data.slots[slot].current or "")
+                end
+                if swapInputs[slot] and swapInputs[slot].SetValue then
+                    swapInputs[slot]:SetValue(data.slots[slot].swap or "")
+                end
+            end
+        end
+    end
+end)
+
+SaveManager:LoadAutoloadConfig()
+
+-- Floating button for minimize
+local function SafeMinimize()
+    if Window and Window.Minimize then
+        Window:Minimize()
+    elseif Fluent and Fluent.GUI then
+        Fluent.GUI.Visible = not Fluent.GUI.Visible
+    end
+end
+
+local OpenGui = Instance.new("ScreenGui")
+OpenGui.Name = "EvadeOverhaulUI"
+OpenGui.ResetOnSpawn = false
+OpenGui.Parent = game:GetService("CoreGui")
+
+local OpenBtn = Instance.new("ImageButton")
+OpenBtn.Size = UDim2.fromOffset(55, 55)
+OpenBtn.Position = UDim2.new(0.02, 0, 0.85, 0)
+OpenBtn.BackgroundColor3 = Color3.fromRGB(66, 135, 245)
+OpenBtn.BackgroundTransparency = 0.3
+OpenBtn.Image = "rbxassetid://6031093670"
+OpenBtn.Parent = OpenGui
+
+local UICorner = Instance.new("UICorner", OpenBtn)
+UICorner.CornerRadius = UDim.new(0.2, 0)
+
+local dragActive, dragStart, startPos
+OpenBtn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragActive = true
+        dragStart = input.Position
+        startPos = OpenBtn.Position
+    end
+end)
+
+OpenBtn.InputChanged:Connect(function(input)
+    if dragActive and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        OpenBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+game:GetService("UserInputService").InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragActive = false
+    end
+end)
+
+OpenBtn.MouseButton1Click:Connect(SafeMinimize)
+
+SettingsTab:AddButton({
+    Title = "Minimize / Restore Window",
+    Description = "Hide or show the main UI",
+    Callback = SafeMinimize
+})
+
+-- Initial notification
+Fluent:Notify({
+    Title = "Evade Overhaul - Emote Changer",
+    Content = "6 independent slots ready! Configuration auto-saves.",
+    Duration = 5
+})
+
+Window:SelectTab(1)
